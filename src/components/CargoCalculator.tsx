@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Truck, Package, MapPin, Calculator, Star, AlertTriangle, Plane, Award, Clock, Wallet } from "lucide-react";
+import { Truck, Package, MapPin, Calculator, Star, AlertTriangle, Plane, Award, Clock, Wallet, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,41 +15,103 @@ import { cn } from "@/lib/utils";
 
 const fmt = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
+// Validation limits
+const LIMITS = {
+  weight: { min: 1, max: 20000, label: "кг" },
+  dim: { min: 1, max: 240, label: "см" }, // standard truck max ~240cm
+  qty: { min: 1, max: 999, label: "шт" },
+};
+
+type NumField = "weight" | "length" | "width" | "height" | "quantity";
+
 export function CargoCalculator() {
   const cities = useMemo(() => getAllCities(), []);
   const [from, setFrom] = useState("Чита");
   const [to, setTo] = useState("Москва");
-  const [weight, setWeight] = useState(500);
-  const [length, setLength] = useState(120);
-  const [width, setWidth] = useState(80);
-  const [height, setHeight] = useState(80);
-  const [quantity, setQuantity] = useState(1);
+  // String state to avoid leading-zero artifacts
+  const [weight, setWeight] = useState("500");
+  const [length, setLength] = useState("120");
+  const [width, setWidth] = useState("80");
+  const [height, setHeight] = useState("80");
+  const [quantity, setQuantity] = useState("1");
   const [type, setType] = useState<"auto" | "express">("auto");
   const [result, setResult] = useState<ReturnType<typeof calculate> | null>(null);
 
+  const num = (s: string) => (s === "" ? NaN : Number(s));
+  const values = {
+    weight: num(weight),
+    length: num(length),
+    width: num(width),
+    height: num(height),
+    quantity: num(quantity),
+  };
+
+  const errors: Partial<Record<NumField, string>> = {};
+  const check = (k: NumField, v: number, lim: { min: number; max: number; label: string }) => {
+    if (Number.isNaN(v)) errors[k] = "Укажите значение";
+    else if (v < lim.min) errors[k] = `Мин. ${lim.min} ${lim.label}`;
+    else if (v > lim.max) errors[k] = `Макс. ${lim.max} ${lim.label}`;
+  };
+  check("weight", values.weight, LIMITS.weight);
+  check("length", values.length, LIMITS.dim);
+  check("width", values.width, LIMITS.dim);
+  check("height", values.height, LIMITS.dim);
+  check("quantity", values.quantity, LIMITS.qty);
+
+  const routeError = from === to ? "Города отправления и назначения совпадают" : null;
+  const isValid = Object.keys(errors).length === 0 && !routeError;
+
   const onCalc = () => {
-    setResult(calculate({ from, to, weight, length, width, height, quantity, type }));
+    if (!isValid) return;
+    setResult(
+      calculate({
+        from,
+        to,
+        weight: values.weight,
+        length: values.length,
+        width: values.width,
+        height: values.height,
+        quantity: values.quantity,
+        type,
+      }),
+    );
     setTimeout(() => {
       document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
   };
 
-  const bestPrice = result ? Math.min(...result.results.filter((r) => r.price !== null).map((r) => r.price!)) : null;
+  // Sort: available first, by price ascending
+  const sortedResults = useMemo(() => {
+    if (!result) return [];
+    return [...result.results].sort((a, b) => {
+      if (a.price === null && b.price === null) return 0;
+      if (a.price === null) return 1;
+      if (b.price === null) return -1;
+      return a.price - b.price;
+    });
+  }, [result]);
+
+  const availableCount = sortedResults.filter((r) => r.price !== null).length;
+  const bestPrice = sortedResults.find((r) => r.price !== null)?.price ?? null;
   const bestDays = result ? Math.min(...result.results.filter((r) => r.days !== null).map((r) => r.days!)) : null;
   const bestRating = result ? Math.max(...result.results.map((r) => r.rating)) : null;
+
+  const totalVol =
+    (values.length || 0) * (values.width || 0) * (values.height || 0) * (values.quantity || 0) / 1_000_000;
+  const totalWeight = (values.weight || 0) * (values.quantity || 0);
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border/60 bg-card/60 backdrop-blur-sm sticky top-0 z-10">
+      <header className="border-b border-border/40 bg-card/80 backdrop-blur-md sticky top-0 z-10">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ background: "var(--gradient-primary)" }}>
+            <div className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary">
               <Truck className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
               <div className="font-semibold leading-tight">КаргоКалк</div>
-              <div className="text-xs text-muted-foreground">сравнение 3 перевозчиков</div>
+              <div className="text-xs text-muted-foreground">сравнение перевозчиков</div>
             </div>
           </div>
           <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
@@ -60,30 +122,29 @@ export function CargoCalculator() {
       </header>
 
       {/* Hero */}
-      <section className="px-6 py-12 sm:py-16" style={{ background: "var(--gradient-hero)" }}>
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-            Калькулятор стоимости перевозки
+      <section className="px-6 pt-12 pb-20 sm:pt-16 sm:pb-24">
+        <div className="mx-auto max-w-2xl text-center">
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
+            Сколько стоит везти ваш груз?
           </h1>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Один расчёт — сразу три перевозчика. Сравните цену, срок и рейтинг
-            и выберите лучший вариант для вашего груза.
+          <p className="mt-3 text-base text-muted-foreground">
+            Заполните параметры — покажем цены трёх перевозчиков сразу.
           </p>
         </div>
       </section>
 
       {/* Calculator */}
-      <main className="mx-auto max-w-6xl px-6 -mt-8 pb-20">
+      <main className="mx-auto max-w-5xl px-6 -mt-12 pb-20">
         <div
-          className="rounded-2xl bg-card border border-border p-6 sm:p-8"
-          style={{ boxShadow: "var(--shadow-elegant)" }}
+          className="rounded-3xl bg-card border border-border p-6 sm:p-8"
+          style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10">
             {/* Направление */}
-            <div className="space-y-5">
+            <div className="space-y-4">
               <SectionTitle icon={<MapPin className="h-4 w-4" />} title="Направление" />
               <div>
-                <Label className="text-xs text-muted-foreground">Откуда</Label>
+                <Label className="text-xs font-medium text-muted-foreground">Откуда</Label>
                 <Select value={from} onValueChange={setFrom}>
                   <SelectTrigger className="h-11 mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -92,16 +153,21 @@ export function CargoCalculator() {
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">Куда</Label>
+                <Label className="text-xs font-medium text-muted-foreground">Куда</Label>
                 <Select value={to} onValueChange={setTo}>
                   <SelectTrigger className="h-11 mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {cities.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {routeError && (
+                  <p className="text-xs text-destructive mt-1.5">{routeError}</p>
+                )}
               </div>
 
-              <SectionTitle icon={<Truck className="h-4 w-4" />} title="Тип перевозки" />
+              <div className="pt-2">
+                <SectionTitle icon={<Truck className="h-4 w-4" />} title="Тип перевозки" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <TypeCard
                   active={type === "auto"}
@@ -121,39 +187,53 @@ export function CargoCalculator() {
             </div>
 
             {/* Груз */}
-            <div className="space-y-5">
+            <div className="space-y-4">
               <SectionTitle icon={<Package className="h-4 w-4" />} title="Параметры груза" />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Вес, кг" value={weight} onChange={setWeight} />
-                <Field label="Количество мест" value={quantity} onChange={setQuantity} min={1} />
+                <Field
+                  label="Вес одного места"
+                  unit="кг"
+                  value={weight}
+                  onChange={setWeight}
+                  error={errors.weight}
+                />
+                <Field
+                  label="Количество мест"
+                  unit="шт"
+                  value={quantity}
+                  onChange={setQuantity}
+                  error={errors.quantity}
+                />
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground">Габариты одного места, см</Label>
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Габариты одного места
+                </Label>
                 <div className="grid grid-cols-3 gap-3 mt-1.5">
-                  <Field label="Длина" value={length} onChange={setLength} compact />
-                  <Field label="Ширина" value={width} onChange={setWidth} compact />
-                  <Field label="Высота" value={height} onChange={setHeight} compact />
+                  <Field label="Длина" unit="см" value={length} onChange={setLength} compact error={errors.length} />
+                  <Field label="Ширина" unit="см" value={width} onChange={setWidth} compact error={errors.width} />
+                  <Field label="Высота" unit="см" value={height} onChange={setHeight} compact error={errors.height} />
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Максимум 240 см по каждой стороне
+                </p>
               </div>
 
-              <div className="rounded-xl bg-muted/60 px-4 py-3 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Общий объём</span>
-                <span className="font-semibold tabular-nums">
-                  {((length * width * height * quantity) / 1_000_000).toFixed(2)} м³
-                </span>
-              </div>
-              <div className="rounded-xl bg-muted/60 px-4 py-3 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Общий вес</span>
-                <span className="font-semibold tabular-nums">
-                  {(weight * quantity).toLocaleString("ru-RU")} кг
-                </span>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <Summary label="Объём" value={`${totalVol.toFixed(2)} м³`} />
+                <Summary label="Вес" value={`${totalWeight.toLocaleString("ru-RU")} кг`} />
               </div>
             </div>
           </div>
 
-          <Button onClick={onCalc} size="lg" className="w-full mt-8 h-12 text-base" style={{ background: "var(--gradient-primary)" }}>
+          <Button
+            onClick={onCalc}
+            disabled={!isValid}
+            size="lg"
+            className="w-full mt-8 h-12 text-base"
+          >
             <Calculator className="h-5 w-5 mr-2" />
-            Рассчитать стоимость
+            {isValid ? "Рассчитать стоимость" : "Заполните данные"}
           </Button>
         </div>
 
@@ -166,24 +246,33 @@ export function CargoCalculator() {
                 <div className="text-sm">
                   <div className="font-medium">Негабаритный груз</div>
                   <div className="text-muted-foreground">
-                    Размер места &gt; 2 м или вес &gt; 1500 кг. Применён коэффициент +15%.
+                    Применён коэффициент +15% к стоимости.
                   </div>
                 </div>
               </div>
             )}
 
-            <div>
-              <h2 className="text-2xl font-bold">Сравнение перевозчиков</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Зелёным отмечен лучший показатель по каждому критерию
-              </p>
+            <div className="flex items-end justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-2xl font-semibold">Найдено предложений: {availableCount}</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Отсортировано по цене. Первым — самое выгодное.
+                </p>
+              </div>
+              {bestPrice !== null && (
+                <div className="flex items-center gap-1.5 text-sm text-success font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  От {fmt(bestPrice)}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {result.results.map((r) => (
+              {sortedResults.map((r, idx) => (
                 <CarrierCard
                   key={r.carrier}
                   r={r}
+                  rank={idx + 1}
                   bestPrice={bestPrice}
                   bestDays={bestDays}
                   bestRating={bestRating}
@@ -191,7 +280,7 @@ export function CargoCalculator() {
               ))}
             </div>
 
-            <Advice results={result.results} />
+            <Advice results={sortedResults} />
           </div>
         )}
       </main>
@@ -201,28 +290,58 @@ export function CargoCalculator() {
 
 function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <div className="flex items-center gap-2 text-sm font-semibold text-foreground/80 uppercase tracking-wide">
+    <div className="flex items-center gap-2 text-xs font-semibold text-foreground/70 uppercase tracking-wider">
       <span className="text-primary">{icon}</span>
       {title}
     </div>
   );
 }
 
+function Summary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-muted/50 px-4 py-2.5">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-semibold tabular-nums text-sm mt-0.5">{value}</div>
+    </div>
+  );
+}
+
 function Field({
-  label, value, onChange, min = 0, compact = false,
+  label, value, onChange, unit, compact = false, error,
 }: {
-  label: string; value: number; onChange: (n: number) => void; min?: number; compact?: boolean;
+  label: string;
+  value: string;
+  onChange: (s: string) => void;
+  unit?: string;
+  compact?: boolean;
+  error?: string;
 }) {
   return (
     <div>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input
-        type="number"
-        min={min}
-        value={value}
-        onChange={(e) => onChange(Math.max(min, Number(e.target.value) || 0))}
-        className={cn("mt-1.5", compact ? "h-10" : "h-11")}
-      />
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      <div className="relative mt-1.5">
+        <Input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => {
+            // allow only digits; strip leading zeros
+            const cleaned = e.target.value.replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+            onChange(cleaned);
+          }}
+          className={cn(
+            compact ? "h-10" : "h-11",
+            unit && "pr-10",
+            error && "border-destructive focus-visible:ring-destructive",
+          )}
+        />
+        {unit && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+            {unit}
+          </span>
+        )}
+      </div>
+      {error && <p className="text-xs text-destructive mt-1">{error}</p>}
     </div>
   );
 }
@@ -257,8 +376,8 @@ const CARRIER_COLORS: Record<string, string> = {
 };
 
 function CarrierCard({
-  r, bestPrice, bestDays, bestRating,
-}: { r: CarrierResult; bestPrice: number | null; bestDays: number | null; bestRating: number | null }) {
+  r, rank, bestPrice, bestDays, bestRating,
+}: { r: CarrierResult; rank: number; bestPrice: number | null; bestDays: number | null; bestRating: number | null }) {
   const unavailable = r.price === null;
   const isBestPrice = r.price !== null && r.price === bestPrice;
   const isBestDays = r.days !== null && r.days === bestDays;
@@ -268,13 +387,18 @@ function CarrierCard({
     <div
       className={cn(
         "rounded-2xl bg-card border p-6 relative transition-all",
-        isBestPrice ? "border-success/50" : "border-border",
+        isBestPrice ? "border-success/60 ring-1 ring-success/20" : "border-border",
       )}
-      style={{ boxShadow: isBestPrice ? "var(--shadow-elegant)" : "var(--shadow-card)" }}
+      style={{ boxShadow: "var(--shadow-card)" }}
     >
-      {isBestPrice && (
-        <div className="absolute -top-3 left-6 px-2.5 py-1 rounded-full bg-success text-white text-xs font-medium flex items-center gap-1">
+      {isBestPrice && !unavailable && (
+        <div className="absolute -top-3 left-6 px-2.5 py-1 rounded-full bg-success text-white text-xs font-medium flex items-center gap-1 shadow-sm">
           <Award className="h-3 w-3" /> Лучшая цена
+        </div>
+      )}
+      {!unavailable && !isBestPrice && (
+        <div className="absolute top-4 right-4 text-xs font-medium text-muted-foreground">
+          #{rank}
         </div>
       )}
 
