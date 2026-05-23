@@ -121,7 +121,6 @@ export function CargoCalculator() {
     }
   };
 
-  // Sort: available first, by price ascending
   // Сортировка предложений от бэкенда (они уже отсортированы на FastAPI, но для надежности)
   const sortedResults = useMemo(() => {
     if (!backendResult || !backendResult.offers) return [];
