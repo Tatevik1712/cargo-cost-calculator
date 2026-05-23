@@ -1,0 +1,20 @@
+cargo_calculator_backend/
+│
+├── config/
+│   └── settings.py          # Конфигурация приложения и загрузка env-переменных
+│
+├── models/
+│   └── schemas.py           # Валидация входных/выходных данных (Pydantic-модели)
+│
+├── services/
+│   ├── __init__.py
+│   ├── dellin_client.py     # Интеграция с API Деловых Линий
+│   └── local_calculator.py  # Парсинг CSV/Excel прайсов (РТТК, БРЛ) и расчет
+│
+├── data/
+│   ├── price_rttk.csv       # Экспортированный CSV-прайс компании РТТК
+│   └── price_brl.csv        # Экспортированный CSV-прайс компании БРЛ
+│
+├── main.py                  # Точка входа FastAPI, роутинг и CORS-настройки
+├── requirements.txt         # Зависимости проекта
+└── .env                     # Приватные ключи и настройки (НЕ добавлять в git!)

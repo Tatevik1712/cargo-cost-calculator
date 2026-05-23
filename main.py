@@ -1,0 +1,82 @@
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+
+from config.settings import settings
+from models.schemas import CargoRequest, CalculationResult, OfferResponse
+from services.dellin_client import DellinAPIClient
+from services.local_calculator import LocalCalculatorService
+
+app = FastAPI(
+    title="Cargo Cost Calculator API",
+    description="Асинхронный бэкенд агрегации тарифов ТК (Деловые Линии, РТТК, БРЛ)",
+    version="1.0.0"
+)
+
+# Настройка CORS-политики для взаимодействия с Flutter-фронтендом
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # На продакшене рекомендуется заменить на домен приложения
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.post("/api/v1/calculate", response_model=CalculationResult)
+async def process_calculation(request: CargoRequest):
+    dellin_client = DellinAPIClient()
+    local_calc = LocalCalculatorService()
+
+    # Запускаем тяжелый сетевой запрос к API Деловых Линий асинхронно
+    dellin_task = asyncio.create_task(dellin_client.calculate(request))
+
+    # Локальные расчеты РТТК и БРЛ по файлам выполняются параллельно
+    rttk_offer = local_calc.calculate_rttk(request)
+    brl_offer = local_calc.calculate_brl(request)
+
+    # Ожидаем ответ от сервера Деловых Линий
+    dellin_res = await dellin_task
+
+    offers = []
+
+    # Если API Деловых Линий вернуло успешный ответ, добавляем в пул
+    if dellin_res.get("success"):
+        offers.append(
+            OfferResponse(
+                company="Деловые Линии",
+                price=dellin_res["price"],
+                term=dellin_res["term"],
+                rating=4.8,
+                oversized=dellin_res["oversized"],
+                description="Прямая интеграция по API"
+            )
+        )
+
+    # Добавляем результаты внутренних ТК
+    offers.append(OfferResponse(**rttk_offer))
+    offers.append(OfferResponse(**brl_offer))
+
+    # Сортируем все доступные ТК по цене (от дешевых к дорогим)
+    offers.sort(key=lambda x: x.price)
+
+    # Формирование рекомендации (Алгоритм выбора лучшего предложения)
+    recommendation = None
+    if len(offers) >= 2:
+        recommendation = (
+            f"Самый бюджетный вариант предоставляет ТК '{offers[0].company}' ({offers[0].price} руб.). "
+            f"Для минимизации рисков и быстрой доставки рассмотрите '{offers[1].company}'."
+        )
+
+    return CalculationResult(
+        status="success",
+        search_parameters=request,
+        offers=offers,
+        recommendation=recommendation
+    )
+
+
+if __name__ == "__main__":
+    # Запуск Uvicorn-сервера
+    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
