@@ -2,7 +2,7 @@
 
 import httpx
 from config.settings import settings
-from models.schemas import CargoRequest
+from backend.app.models.schemas import CargoRequest
 
 
 class DellinAPIClient:
@@ -41,7 +41,7 @@ class DellinAPIClient:
                 "length": cargo.length / 100.0,  # Конвертация см -> метры
                 "width": cargo.width / 100.0,
                 "height": cargo.height / 100.0,
-                "totalWeight": cargo.weight,
+                "totalWeight": cargo.weight * cargo.quantity,  # Общий вес партии в кг
                 "totalvolume": total_volume,
                 "oversizedWeight": cargo.weight if is_oversized else 0,
                 "oversizedVolume": total_volume if is_oversized else 0

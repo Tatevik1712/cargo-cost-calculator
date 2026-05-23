@@ -137,10 +137,10 @@ export function CargoCalculator() {
   // Текст рекомендации от бэкенда
   const serverRecommendation = backendResult?.recommendation ?? null;
 
-  const totalVol = backendResult?.total_volume ?? 0; // или как называется это поле в схеме ответа вашего API
-  //const totalVol = ((values.length * values.width * values.height) / 1000000) * values.quantity;
-  //const totalWeight = values.weight * values.quantity;
-  const totalWeight = backendResult?.total_weight ?? 0; // проверьте точное название поля в схеме ответа вашего API
+  //const totalVol = backendResult?.total_volume ?? 0; // или как называется это поле в схеме ответа вашего API
+  const totalVol = ((values.length * values.width * values.height) / 1000000) * values.quantity;
+  const totalWeight = values.weight * values.quantity;
+  //const totalWeight = backendResult?.total_weight ?? 0; // проверьте точное название поля в схеме ответа вашего API
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}

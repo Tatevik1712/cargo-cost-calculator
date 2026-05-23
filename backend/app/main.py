@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 
 from config.settings import settings
-from models.schemas import CargoRequest, CalculationResult, OfferResponse
+from models.schemas import CargoRequest, CalculationResponse, OfferResponse
 from services.dellin_client import DellinAPIClient
 from services.local_calculator import LocalCalculatorService
 
@@ -14,7 +14,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Настройка CORS-политики для взаимодействия с Flutter-фронтендом
+# Настройка CORS-политики
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # На продакшене рекомендуется заменить на домен приложения
@@ -24,10 +24,11 @@ app.add_middleware(
 )
 
 
-@app.post("/api/v1/calculate", response_model=CalculationResult)
+@app.post("/api/v1/calculate", response_model=CalculationResponse)
 async def process_calculation(request: CargoRequest):
     dellin_client = DellinAPIClient()
     local_calc = LocalCalculatorService()
+    total_volume, total_weight = local_calc.calculate_totals(request)
 
     # Запускаем тяжелый сетевой запрос к API Деловых Линий асинхронно
     dellin_task = asyncio.create_task(dellin_client.calculate(request))
@@ -69,10 +70,11 @@ async def process_calculation(request: CargoRequest):
             f"Для минимизации рисков и быстрой доставки рассмотрите '{offers[1].company}'."
         )
 
-    return CalculationResult(
-        status="success",
+    return CalculationResponse(
+        total_volume=total_volume,
+        total_weight=total_weight,
         search_parameters=request,
-        offers=offers,
+        offers=[rttk_offer, brl_offer],
         recommendation=recommendation
     )
 
