@@ -25,17 +25,27 @@ const LIMITS = {
 type NumField = "weight" | "length" | "width" | "height" | "quantity";
 
 export function CargoCalculator() {
+  // 1. Оставляем один стейт для типа перевозки
+  const [type, setType] = useState<"auto" | "express">("auto");
+
+  // 2. Стейты для работы с FastAPI-бэкендом
+  const [backendResult, setBackendResult] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // 3. Старый результат (если он пока нужен для совместимости, оставляем только этот один)
+  const [result, setResult] = useState<ReturnType<typeof calculate> | null>(null);
+
+  // 4. Стейты формы и городов
   const cities = useMemo(() => getAllCities(), []);
   const [from, setFrom] = useState("Чита");
   const [to, setTo] = useState("Москва");
-  // String state to avoid leading-zero artifacts
+
+  // Параметры груза
   const [weight, setWeight] = useState("500");
   const [length, setLength] = useState("120");
   const [width, setWidth] = useState("80");
   const [height, setHeight] = useState("80");
   const [quantity, setQuantity] = useState("1");
-  const [type, setType] = useState<"auto" | "express">("auto");
-  const [result, setResult] = useState<ReturnType<typeof calculate> | null>(null);
 
   const num = (s: string) => (s === "" ? NaN : Number(s));
   const values = {
@@ -61,45 +71,77 @@ export function CargoCalculator() {
   const routeError = from === to ? "Города отправления и назначения совпадают" : null;
   const isValid = Object.keys(errors).length === 0 && !routeError;
 
-  const onCalc = () => {
+  const onCalc = async () => {
     if (!isValid) return;
-    setResult(
-      calculate({
-        from,
-        to,
-        weight: values.weight,
-        length: values.length,
-        width: values.width,
-        height: values.height,
-        quantity: values.quantity,
-        type,
-      }),
-    );
-    setTimeout(() => {
-      document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
+
+    setIsLoading(true);
+    setBackendResult(null); // Очищаем прошлый результат перед новым запросом
+
+    // Формируем JSON-пакет по схеме Pydantic, которую ждет наш FastAPI
+    const requestData = {
+      from_location: from,
+      to_location: to,
+      length: values.length,
+      width: values.width,
+      height: values.height,
+      weight: values.weight,
+      quantity: values.quantity,
+      delivery_type: type,
+    };
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/v1/calculate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ошибка сервера: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Сохраняем ответ бэкенда в наше новое состояние
+      setBackendResult(data);
+
+      // Плавно скроллим к результатам
+      setTimeout(() => {
+        document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+
+    } catch (error) {
+      console.error("Ошибка при запросе к бэкенду:", error);
+      alert("Не удалось связаться с сервером расчетов. Проверьте, что бэкенд запущен.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Sort: available first, by price ascending
+  // Сортировка предложений от бэкенда (они уже отсортированы на FastAPI, но для надежности)
   const sortedResults = useMemo(() => {
-    if (!result) return [];
-    return [...result.results].sort((a, b) => {
-      if (a.price === null && b.price === null) return 0;
-      if (a.price === null) return 1;
-      if (b.price === null) return -1;
-      return a.price - b.price;
-    });
-  }, [result]);
+    if (!backendResult || !backendResult.offers) return [];
+    return [...backendResult.offers];
+  }, [backendResult]);
 
-  const availableCount = sortedResults.filter((r) => r.price !== null).length;
-  const bestPrice = sortedResults.find((r) => r.price !== null)?.price ?? null;
-  const bestDays = result ? Math.min(...result.results.filter((r) => r.days !== null).map((r) => r.days!)) : null;
-  const bestRating = result ? Math.max(...result.results.map((r) => r.rating)) : null;
+  const availableCount = sortedResults.length;
 
-  const totalVol =
-    (values.length || 0) * (values.width || 0) * (values.height || 0) * (values.quantity || 0) / 1_000_000;
-  const totalWeight = (values.weight || 0) * (values.quantity || 0);
+  const bestPrice = sortedResults.length > 0 ? sortedResults[0].price : null;
 
+  // Проверка на негабарит (смотрим, есть ли флаг oversized хотя бы у одной компании)
+  const isOversized = sortedResults.some((o: any) => o.oversized);
+
+  // Текст рекомендации от бэкенда
+  const serverRecommendation = backendResult?.recommendation ?? null;
+
+  const totalVol = backendResult?.total_volume ?? 0; // или как называется это поле в схеме ответа вашего API
+  //const totalVol = ((values.length * values.width * values.height) / 1000000) * values.quantity;
+  //const totalWeight = values.weight * values.quantity;
+  const totalWeight = backendResult?.total_weight ?? 0; // проверьте точное название поля в схеме ответа вашего API
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -110,13 +152,12 @@ export function CargoCalculator() {
               <Truck className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <div className="font-semibold leading-tight">КаргоКалк</div>
-              <div className="text-xs text-muted-foreground">сравнение перевозчиков</div>
+              <div className="font-semibold leading-tight">CargoCalculator</div>
+              <div className="text-xs text-muted-foreground">Калькулятор перевозок</div>
             </div>
           </div>
           <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-            Тарифы актуальны
+            Автор: Саргсян Татев. Для ПАО «ГМК „Норильский никель“»
           </div>
         </div>
       </header>
@@ -125,7 +166,7 @@ export function CargoCalculator() {
       <section className="px-6 pt-12 pb-20 sm:pt-16 sm:pb-24">
         <div className="mx-auto max-w-2xl text-center">
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-            Сколько стоит везти ваш груз?
+            Тестовое веб-приложение для подсчета перевозки груза
           </h1>
           <p className="mt-3 text-base text-muted-foreground">
             Заполните параметры — покажем цены трёх перевозчиков сразу.
@@ -228,25 +269,25 @@ export function CargoCalculator() {
 
           <Button
             onClick={onCalc}
-            disabled={!isValid}
+            disabled={!isValid || isLoading} // Отключаем кнопку во время загрузки
             size="lg"
             className="w-full mt-8 h-12 text-base"
           >
             <Calculator className="h-5 w-5 mr-2" />
-            {isValid ? "Рассчитать стоимость" : "Заполните данные"}
+            {isLoading ? "Выполняется расчет..." : isValid ? "Рассчитать стоимость" : "Заполните данные"}
           </Button>
         </div>
 
         {/* Results */}
-        {result && (
+        {backendResult && (
           <div id="results" className="mt-12 space-y-6 scroll-mt-24">
-            {result.oversized && (
+            {isOversized && (
               <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
                 <div className="text-sm">
                   <div className="font-medium">Негабаритный груз</div>
                   <div className="text-muted-foreground">
-                    Применён коэффициент +15% к стоимости.
+                    Внимание! Параметры груза превышают стандартные лимиты.
                   </div>
                 </div>
               </div>
@@ -268,19 +309,53 @@ export function CargoCalculator() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {sortedResults.map((r, idx) => (
-                <CarrierCard
-                  key={r.carrier}
-                  r={r}
-                  rank={idx + 1}
-                  bestPrice={bestPrice}
-                  bestDays={bestDays}
-                  bestRating={bestRating}
-                />
+              {sortedResults.map((r: any, idx: number) => (
+                <div
+                  key={r.company}
+                  className="rounded-2xl bg-card border p-6 relative transition-all border-border"
+                  style={{ boxShadow: "var(--shadow-card)" }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white">
+                      <Truck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="font-semibold">{r.company}</div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Star className="h-3 w-3 fill-muted-foreground" />
+                        {r.rating.toFixed(1)} / 5.0
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="text-3xl font-bold tabular-nums text-success">
+                      {fmt(r.price)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">{r.description}</div>
+
+                    <div className="mt-5 pt-5 border-t border-border space-y-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <Clock className="h-4 w-4" /> Срок доставки
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {r.term}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
 
-            <Advice results={sortedResults} />
+            {/* Вывод рекомендации от бэкенда */}
+            {serverRecommendation && (
+              <div className="rounded-2xl bg-primary/5 border border-primary/20 p-6">
+                <div className="font-semibold mb-2">Рекомендация системы</div>
+                <p className="text-sm text-muted-foreground">{serverRecommendation}</p>
+              </div>
+            )}
           </div>
         )}
       </main>
