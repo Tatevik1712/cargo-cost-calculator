@@ -1,9 +1,17 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+import os
+import sys
 
-from config.settings import settings
+# Вычисляем путь к папке backend/ (на уровень выше, чем app/)
+# и добавляем его в системные пути поиска модулей Python
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+from backend.config.settings import settings
 from models.schemas import CargoRequest, CalculationResponse, OfferResponse
 from services.dellin_client import DellinAPIClient
 from services.local_calculator import LocalCalculatorService

@@ -1,7 +1,7 @@
 # Модуль интеграции с API «Деловых Линий»
 
 import httpx
-from config.settings import settings
+from backend.config.settings import settings
 from backend.app.models.schemas import CargoRequest
 
 

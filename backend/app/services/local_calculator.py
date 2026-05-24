@@ -28,7 +28,7 @@ class LocalCalculatorService:
         """Приводит названия городов к единому упрощенному виду для надежного поиска"""
         c = city.lower().strip()
         if "санкт-петербург" in c or "санкт петербург" in c or "питербург" in c:
-            return "питербург"  # Учитываем опечатку в вашем CSV БРЛ
+            return "питербург"  # Учитываем опечатку в CSV БРЛ
         return c
 
     def _parse_russian_float(self, val_str: str) -> float:
