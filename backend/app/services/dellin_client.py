@@ -4,7 +4,6 @@ import httpx
 from backend.config.settings import settings
 from backend.app.models.schemas import CargoRequest
 
-
 class DellinAPIClient:
     def __init__(self):
         self.app_key = settings.DELLIN_APP_KEY

@@ -11,10 +11,10 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from backend.app.services.dellin_client import DellinAPIClient
 from backend.config.settings import settings
-from models.schemas import CargoRequest, CalculationResponse, OfferResponse
-from services.dellin_client import DellinAPIClient
-from services.local_calculator import LocalCalculatorService
+from backend.app.models.schemas import CargoRequest, CalculationResponse, OfferResponse
+from backend.app.services.local_calculator import LocalCalculatorService
 
 app = FastAPI(
     title="Cargo Cost Calculator API",
