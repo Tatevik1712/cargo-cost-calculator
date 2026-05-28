@@ -99,7 +99,7 @@ async def upload_price_file(
 
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXT:
-        raise HTTPException(status_code=400, detail=f"Разрешены только {', '.join(ALLOWED_ EXT)}".replace("ALLOWED_ EXT", "ALLOWED_EXT"))
+        raise HTTPException(status_code=400, detail=f"Разрешены только {', '.join(ALLOWED_EXT)}")
 
     local = LocalCalculatorService()
     data_dir = local.data_dir
