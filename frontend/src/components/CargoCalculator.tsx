@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { Truck, Package, MapPin, Calculator, AlertTriangle, Plane, Award, Clock, Wallet, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Truck, Package, MapPin, Calculator, AlertTriangle, Plane, Award, Clock, Wallet, CheckCircle2, FileDown, LogOut, ShieldAlert, LogIn, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,9 @@ import {
 } from "@/components/ui/select";
 import { calculate, getAllCities, type CarrierResult } from "@/lib/calc";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { logout } from "@/lib/auth";
+import { generateReport } from "@/lib/pdf";
 
 const fmt = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
@@ -25,6 +29,9 @@ const LIMITS = {
 type NumField = "weight" | "length" | "width" | "height" | "quantity";
 
 export function CargoCalculator() {
+    const user = useAuth();
+    const navigate = useNavigate();
+
     // 1. Оставляем один стейт для типа перевозки
     const [type, setType] = useState<"auto" | "express">("auto");
 
@@ -190,8 +197,36 @@ export function CargoCalculator() {
                             <div className="text-xs text-muted-foreground">Калькулятор перевозок</div>
                         </div>
                     </div>
-                    <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
-                        Автор: Саргсян Татев. Для ПАО «ГМК „Норильский никель“»
+                    <div className="flex items-center gap-2">
+                        {user ? (
+                            <>
+                                {user.role === "admin" && (
+                                    <Link to="/admin">
+                                        <Button variant="outline" size="sm" className="gap-1.5">
+                                            <ShieldAlert className="h-4 w-4" /> Админ
+                                        </Button>
+                                    </Link>
+                                )}
+                                <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground px-2">
+                                    <User className="h-4 w-4" />
+                                    {user.name}
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => { logout(); navigate({ to: "/login" }); }}
+                                    className="gap-1.5"
+                                >
+                                    <LogOut className="h-4 w-4" /> Выйти
+                                </Button>
+                            </>
+                        ) : (
+                            <Link to="/login">
+                                <Button size="sm" className="gap-1.5">
+                                    <LogIn className="h-4 w-4" /> Войти
+                                </Button>
+                            </Link>
+                        )}
                     </div>
                 </div>
             </header>
@@ -331,12 +366,34 @@ export function CargoCalculator() {
                             <div>
                                 <h2 className="text-2xl font-semibold">Найдено предложений: {availableCount}</h2>
                             </div>
-                            {bestPrice !== null && (
-                                <div className="flex items-center gap-1.5 text-sm text-success font-medium">
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    От {fmt(bestPrice)}
-                                </div>
-                            )}
+                            <div className="flex items-center gap-3">
+                                {bestPrice !== null && (
+                                    <div className="flex items-center gap-1.5 text-sm text-success font-medium">
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        От {fmt(bestPrice)}
+                                    </div>
+                                )}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => generateReport({
+                                        from, to, type,
+                                        weight: values.weight,
+                                        length: values.length,
+                                        width: values.width,
+                                        height: values.height,
+                                        quantity: values.quantity,
+                                        totalVolume: totalVol,
+                                        totalWeight: totalWeight,
+                                        offers: backendResult?.offers || [],
+                                        recommendation: clientRecommendation,
+                                        username: user?.name,
+                                    })}
+                                    className="gap-1.5"
+                                >
+                                    <FileDown className="h-4 w-4" /> Скачать PDF
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
