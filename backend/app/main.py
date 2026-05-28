@@ -57,7 +57,6 @@ async def process_calculation(request: CargoRequest):
                 company="Деловые Линии",
                 price=dellin_res["price"],
                 term=dellin_res["term"],
-                rating=4.8,
                 oversized=dellin_res["oversized"],
                 description="Прямая интеграция по API"
             )

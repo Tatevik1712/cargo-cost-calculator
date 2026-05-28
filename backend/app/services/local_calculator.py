@@ -222,7 +222,6 @@ class LocalCalculatorService:
                 "company": "РТТК",
                 "price": price,
                 "term": "7 дней",
-                "rating": 4.2,
                 "oversized": cargo.length > 200 or cargo.width > 200 or cargo.height > 200 or cargo.weight > 1500,
                 "description": f"Региональный авторейс РТТК (Машина {capacity}т)"
             }
@@ -232,7 +231,6 @@ class LocalCalculatorService:
                 "company": "РТТК (Маршрут не обслуживается)",
                 "price": 0.0,
                 "term": "—",
-                "rating": 4.2,
                 "oversized": False,
                 "description": f"Компания РТТК таким путем выбранный транспорт ({capacity}т) не возит."
             }
@@ -248,7 +246,6 @@ class LocalCalculatorService:
                 "company": "БРЛ",
                 "price": price,
                 "term": "6 дней",
-                "rating": 4.5,
                 "oversized": cargo.length > 200 or cargo.width > 200 or cargo.height > 200 or cargo.weight > 1500,
                 "description": f"Магистральный рейс БРЛ (Машина {capacity}т)"
             }
@@ -257,7 +254,6 @@ class LocalCalculatorService:
                 "company": "БРЛ (Маршрут не обслуживается)",
                 "price": 0.0,
                 "term": "—",
-                "rating": 4.5,
                 "oversized": False,
                 "description": f"Компания БРЛ таким путем выбранный транспорт ({capacity}т) не возит."
             }

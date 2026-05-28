@@ -16,7 +16,6 @@ export interface CarrierResult {
   name: string;
   price: number | null;
   days: number | null; // или строка, в зависимости от ответа бэкенда ("5 дней")
-  rating: number;
   note?: string;
   oversized?: boolean;
 }

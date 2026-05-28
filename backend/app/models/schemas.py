@@ -16,7 +16,6 @@ class OfferResponse(BaseModel):
     company: str = Field(..., example="РТТК", description="Название ТК (Деловые Линии, РТТК, БРЛ)")
     price: float = Field(..., example=68235.34, description="Итоговая цена перевозки в рублях")
     term: str = Field(..., example="7 дней", description="Срок доставки груза")
-    rating: float = Field(..., example=4.2, description="Средняя оценка/рейтинг компании")
     oversized: bool = Field(..., description="Флаг, является ли груз негабаритным")
     description: str = Field(..., description="Комментарий или описание тарифа (например, тип машины)")
 
