@@ -36,6 +36,8 @@ app.add_middleware(
 async def process_calculation(request: CargoRequest):
     dellin_client = DellinAPIClient()
     local_calc = LocalCalculatorService()
+
+    # Расчет общих параметров партии груза
     total_volume, total_weight = local_calc.calculate_totals(request)
 
     # Запускаем тяжелый сетевой запрос к API Деловых Линий асинхронно
@@ -45,13 +47,13 @@ async def process_calculation(request: CargoRequest):
     rttk_offer = local_calc.calculate_rttk(request)
     brl_offer = local_calc.calculate_brl(request)
 
-    # Ожидаем ответ от сервера Деловых Линий
+    # Ожидаем ответ от сервера Деловых Линий (уже без VPN и SSL блокировок)
     dellin_res = await dellin_task
 
     offers = []
 
-    # Если API Деловых Линий вернуло успешный ответ, добавляем в пул
-    if dellin_res.get("success"):
+    # 1. ИСПРАВЛЕНО: Проверяем статус "available" в соответствии с новой архитектурой клиента
+    if dellin_res and dellin_res.get("status") == "available":
         offers.append(
             OfferResponse(
                 company="Деловые Линии",
@@ -61,6 +63,10 @@ async def process_calculation(request: CargoRequest):
                 description="Прямая интеграция по API"
             )
         )
+    elif dellin_res:
+        # Если ДЛ недоступны (ошибка маршрута/города), мы все равно можем передать карточку с ошибкой
+        # Если ваша схема OfferResponse строго требует валидных данных, этот блок можно пропустить
+        print(f"[ИНФО] Деловые Линии вернули статус: {dellin_res.get('error_message')}")
 
     # Добавляем результаты внутренних ТК
     offers.append(OfferResponse(**rttk_offer))
@@ -77,11 +83,12 @@ async def process_calculation(request: CargoRequest):
             f"Для минимизации рисков и быстрой доставки рассмотрите '{offers[1].company}'."
         )
 
+    # 2. ИСПРАВЛЕНО: Возвращаем динамический отсортированный массив offers вместо статичных rttk/brl
     return CalculationResponse(
         total_volume=total_volume,
         total_weight=total_weight,
         search_parameters=request,
-        offers=[rttk_offer, brl_offer],
+        offers=offers,  # ТЕПЕРЬ ТУТ ВСЕ 3 КОМПАНИИ (ЕСЛИ ДЛ ДОСТУПНЫ)
         recommendation=recommendation
     )
 
