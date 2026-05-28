@@ -1,0 +1,12 @@
+{
+  "name": "cargo-calculator-root",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && bun run dev",
+    "build": "cd frontend && bun run build",
+    "build:dev": "cd frontend && bun run build:dev",
+    "preview": "cd frontend && bun run preview",
+    "lint": "cd frontend && bun run lint",
+    "postinstall": "cd frontend && bun install"
+  }
+}
