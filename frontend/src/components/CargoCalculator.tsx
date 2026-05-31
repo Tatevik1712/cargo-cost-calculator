@@ -128,26 +128,45 @@ export function CargoCalculator() {
         }
     };
 
-// Сортировка предложений от бэкенда
-// todo: доделать логику сортировки в фронтенде
+    // Хелпер: предложение реально доступно (есть цена и статус ok)
+    const isAvailable = (o: any) =>
+        o && o.status === "available" && typeof o.price === "number" && o.price > 0;
+
+    // Сортировка: сначала доступные по возрастанию цены, затем недоступные в конце
     const sortedResults = useMemo(() => {
-        if (!backendResult || !backendResult.offers) return [];
-        return [...backendResult.offers];
+        if (!backendResult || !Array.isArray(backendResult.offers)) return [];
+        const offers = [...backendResult.offers];
+        return offers.sort((a: any, b: any) => {
+            const aOk = isAvailable(a);
+            const bOk = isAvailable(b);
+            if (aOk && !bOk) return -1;
+            if (!aOk && bOk) return 1;
+            if (aOk && bOk) return a.price - b.price;
+            // оба недоступны — стабильно по названию
+            return String(a.company || "").localeCompare(String(b.company || ""), "ru");
+        });
     }, [backendResult]);
 
-    // ИСПРАВЛЕНО: Считаем только РЕАЛЬНО доступные предложения с ценой
-    const availableCount = useMemo(() => {
-        if (!backendResult || !backendResult.offers) return 0;
-        return backendResult.offers.filter(
-            (o: any) => o.status === "available" && o.price && o.price > 0
-        ).length;
-    }, [backendResult]);
+    // Считаем только реально доступные предложения с ценой
+    const availableCount = useMemo(
+        () => sortedResults.filter(isAvailable).length,
+        [sortedResults],
+    );
 
-    // Ищем лучшую цену исключительно среди ТЕХ компаний, которые РЕАЛЬНО везут груз (цена > 0)
+    // Корректное склонение для "предложений"
+    const offersWord = (n: number) => {
+        const mod10 = n % 10;
+        const mod100 = n % 100;
+        if (mod100 >= 11 && mod100 <= 14) return "предложений";
+        if (mod10 === 1) return "предложение";
+        if (mod10 >= 2 && mod10 <= 4) return "предложения";
+        return "предложений";
+    };
+
+    // Лучшая цена — первая в отсортированном списке доступных
     const bestPrice = useMemo(() => {
-        const validOffers = sortedResults.filter((o: any) => o.price && o.price > 0 && o.status === "available");
-        if (validOffers.length === 0) return null;
-        return Math.min(...validOffers.map((o: any) => o.price));
+        const first = sortedResults.find(isAvailable);
+        return first ? first.price : null;
     }, [sortedResults]);
 
     // Проверка на негабарит (смотрим, есть ли флаг oversized хотя бы у одной компании)
@@ -364,7 +383,9 @@ export function CargoCalculator() {
 
                         <div className="flex items-end justify-between flex-wrap gap-3">
                             <div>
-                                <h2 className="text-2xl font-semibold">Найдено предложений: {availableCount}</h2>
+                                <h2 className="text-2xl font-semibold">
+                                    Найдено {availableCount} {offersWord(availableCount)}
+                                </h2>
                             </div>
                             <div className="flex items-center gap-3">
                                 {bestPrice !== null && (
