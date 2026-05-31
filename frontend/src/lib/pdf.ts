@@ -1,5 +1,4 @@
 import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 
 const fmt = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " RUB";
 
@@ -29,150 +28,173 @@ interface ReportData {
   username?: string;
 }
 
-// Транслитерация для корректной печати кириллицы стандартными шрифтами jsPDF
-function translit(s: string): string {
-  const map: Record<string, string> = {
-    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
-    и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
-    с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
-    ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
-  };
-  return s
-    .split("")
-    .map((c) => {
-      const lower = c.toLowerCase();
-      const t = map[lower];
-      if (t === undefined) return c;
-      return c === lower ? t : t.charAt(0).toUpperCase() + t.slice(1);
-    })
-    .join("");
-}
-
-const T = translit;
-
 export function generateReport(data: ReportData) {
-  const doc = new jsPDF();
-  const W = doc.internal.pageSize.getWidth();
-  let y = 18;
+  console.log("=== ЗАПУСК ГЕНЕРАЦИИ ЧЕРЕЗ КАНВАС ===");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(T("Отчёт по расчёту перевозки"), W / 2, y, { align: "center" });
-  y += 8;
+  try {
+    // 1. Создаем скрытый виртуальный холст с хорошим разрешением (PPI)
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Не удалось создать контекст Canvas");
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  const now = new Date().toLocaleString("ru-RU");
-  doc.text(T(`Дата: ${now}`), W / 2, y, { align: "center" });
-  if (data.username) {
-    y += 5;
-    doc.text(T(`Пользователь: ${data.username}`), W / 2, y, { align: "center" });
-  }
-  doc.setTextColor(0);
-  y += 10;
+    const width = 1200;
+    // Динамически рассчитываем высоту холста в зависимости от количества предложений
+    const offersCount = data.offers?.length || 0;
+    const height = 1400 + offersCount * 100 + (data.recommendation ? 200 : 0);
 
-  // Маршрут
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text(T("Маршрут"), 14, y);
-  y += 2;
-  autoTable(doc, {
-    startY: y + 2,
-    theme: "grid",
-    styles: { font: "helvetica", fontSize: 10 },
-    body: [
-      [T("Откуда"), T(data.from)],
-      [T("Куда"), T(data.to)],
-      [T("Тип перевозки"), T(data.type === "express" ? "Экспресс" : "Авто")],
-    ],
-    columnStyles: { 0: { fontStyle: "bold", cellWidth: 55, fillColor: [245, 245, 245] } },
-  });
-  // @ts-ignore
-  y = doc.lastAutoTable.finalY + 8;
+    canvas.width = width;
+    canvas.height = height;
 
-  // Параметры груза
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text(T("Параметры груза"), 14, y);
-  autoTable(doc, {
-    startY: y + 4,
-    theme: "grid",
-    styles: { font: "helvetica", fontSize: 10 },
-    body: [
-      [T("Вес одного места"), `${data.weight} ${T("кг")}`],
-      [T("Количество мест"), `${data.quantity} ${T("шт")}`],
-      [T("Габариты (ДxШxВ)"), `${data.length} x ${data.width} x ${data.height} ${T("см")}`],
-      [T("Общий объём"), `${data.totalVolume.toFixed(3)} m3`],
-      [T("Общий вес"), `${data.totalWeight.toLocaleString("ru-RU")} ${T("кг")}`],
-    ],
-    columnStyles: { 0: { fontStyle: "bold", cellWidth: 55, fillColor: [245, 245, 245] } },
-  });
-  // @ts-ignore
-  y = doc.lastAutoTable.finalY + 8;
+    // Заливаем фон белым цветом
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
 
-  // Предложения
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text(T("Предложения перевозчиков"), 14, y);
+    // Устанавливаем стандартный системный шрифт, который гарантированно есть везде и поддерживает кириллицу
+    const systemFont = "Arial, Helvetica, sans-serif";
+    let y = 80;
 
-  const sorted = [...data.offers].sort((a, b) => {
-    const ap = a.price && a.price > 0 ? a.price : Infinity;
-    const bp = b.price && b.price > 0 ? b.price : Infinity;
-    return ap - bp;
-  });
+    // 2. Отрисовка Шапки
+    ctx.fillStyle = "#1e293b";
+    ctx.font = `bold 36px ${systemFont}`;
+    ctx.textAlign = "center";
+    ctx.fillText("Отчёт по расчёту перевозки", width / 2, y);
+    y += 50;
 
-  autoTable(doc, {
-    startY: y + 4,
-    theme: "striped",
-    headStyles: { fillColor: [37, 99, 235], textColor: 255, font: "helvetica", fontStyle: "bold" },
-    styles: { font: "helvetica", fontSize: 10 },
-    head: [[T("№"), T("Компания"), T("Цена"), T("Срок"), T("Описание")]],
-    body: sorted.map((o, i) => {
+    ctx.fillStyle = "#64748b";
+    ctx.font = `20px ${systemFont}`;
+    const now = new Date().toLocaleString("ru-RU");
+    ctx.fillText(`Дата создания: ${now}`, width / 2, y);
+
+    if (data.username) {
+      y += 35;
+      ctx.fillText(`Пользователь: ${data.username}`, width / 2, y);
+    }
+    y += 70;
+
+    // Функция для отрисовки стандартных двухколоночных таблиц параметров
+    const drawInfoTable = (title: string, rows: [string, string][]) => {
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `bold 24px ${systemFont}`;
+      ctx.fillText(title, 80, y);
+      y += 20;
+
+      rows.forEach(([label, value]) => {
+        // Задний фон строки
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(80, y, width - 160, 45);
+
+        // Граница строки
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(80, y, width - 160, 45);
+
+        // Текст левой колонки
+        ctx.fillStyle = "#475569";
+        ctx.font = `bold 18px ${systemFont}`;
+        ctx.fillText(label, 100, y + 28);
+
+        // Текст правой колонки
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `18px ${systemFont}`;
+        ctx.fillText(value, 350, y + 28);
+        y += 45;
+      });
+      y += 40;
+    };
+
+    // 3. Таблица Маршрута
+    drawInfoTable("Маршрут перевозки", [
+      ["Откуда", data.from || "—"],
+      ["Куда", data.to || "—"],
+      ["Тип перевозки", data.type === "express" ? "Экспресс" : "Авто"]
+    ]);
+
+    // 4. Таблица Параметров груза
+    drawInfoTable("Характеристики груза", [
+      ["Вес одного места", `${data.weight ?? 0} кг`],
+      ["Количество мест", `${data.quantity ?? 0} шт`],
+      ["Габариты (ДxШxВ)", `${data.length ?? 0} x ${data.width ?? 0} x ${data.height ?? 0} см`],
+      ["Общий объём", `${(data.totalVolume ?? 0).toFixed(3)} м³`],
+      ["Общий вес", `${(data.totalWeight ?? 0).toLocaleString("ru-RU")} кг`]
+    ]);
+
+    // 5. Таблица Предложений перевозчиков
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#0f172a";
+    ctx.font = `bold 24px ${systemFont}`;
+    ctx.fillText("Предложения перевозчиков", 80, y);
+    y += 25;
+
+    // Шапка таблицы предложений
+    ctx.fillStyle = "#2563eb"; // Синий цвет
+    ctx.fillRect(80, y, width - 160, 50);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold 18px ${systemFont}`;
+    ctx.fillText("№", 100, y + 32);
+    ctx.fillText("Компания", 150, y + 32);
+    ctx.fillText("Цена", 450, y + 32);
+    ctx.fillText("Срок", 650, y + 32);
+    ctx.fillText("Описание", 800, y + 32);
+    y += 50;
+
+    // Строки предложений
+    const sortedOffers = [...(data.offers || [])].sort((a, b) => {
+      const ap = a.price && a.price > 0 ? a.price : Infinity;
+      const bp = b.price && b.price > 0 ? b.price : Infinity;
+      return ap - bp;
+    });
+
+    sortedOffers.forEach((o, i) => {
+      ctx.fillStyle = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      ctx.fillRect(80, y, width - 160, 50);
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.strokeRect(80, y, width - 160, 50);
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `18px ${systemFont}`;
+
       const isUn = !o.price || o.price === 0 || o.status === "unavailable";
-      return [
-        String(i + 1),
-        T(o.company),
-        isUn ? T("недоступно") : fmt(o.price),
-        isUn ? "—" : T(String(o.term)),
-        T(o.description || o.error_message || ""),
-      ];
-    }),
-    columnStyles: {
-      0: { cellWidth: 10, halign: "center" },
-      2: { halign: "right", fontStyle: "bold" },
-    },
-  });
-  // @ts-ignore
-  y = doc.lastAutoTable.finalY + 8;
 
-  // Рекомендация
-  if (data.recommendation) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(T("Рекомендация"), 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    const lines = doc.splitTextToSize(T(data.recommendation), W - 28);
-    doc.text(lines, 14, y);
-    y += lines.length * 5 + 4;
+      ctx.fillText(String(i + 1), 100, y + 32);
+      ctx.fillText(o.company || "—", 150, y + 32);
+      ctx.fillText(isUn ? "недоступно" : fmt(o.price), 450, y + 32);
+      ctx.fillText(isUn ? "—" : String(o.term || "—"), 650, y + 32);
+
+      // Обрезка слишком длинного описания для предотвращения выезда за границы холста
+      const desc = o.description || o.error_message || "";
+      const shortDesc = desc.length > 35 ? desc.substring(0, 32) + "..." : desc;
+      ctx.fillText(shortDesc, 800, y + 32);
+
+      y += 50;
+    });
+    y += 40;
+
+    // Футер снизу картинки
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = `14px ${systemFont}`;
+    ctx.textAlign = "center";
+    ctx.fillText("Cargo Calculator • Сгенерировано автоматически", width / 2, height - 30);
+
+    // 7. Конвертируем холст в изображение и сохраняем через чистый jsPDF без использования его текстового движка
+    const imgData = canvas.toDataURL("image/jpeg", 1.0);
+
+    // Создаем PDF-документ с размерами холста
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "px",
+      format: [width, height]
+    });
+
+    pdf.addImage(imgData, "JPEG", 0, 0, width, height);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    pdf.save(`cargo-report-${stamp}.pdf`);
+    console.log("=== УСПЕХ: PDF СГЕНЕРИРОВАН И СКАЧАН ===");
+
+  } catch (err) {
+    console.error("!!! ОШИБКА КАНВАС-ГЕНЕРАЦИИ !!!", err);
   }
-
-  // Footer
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(140);
-    doc.text(
-      T(`Cargo Calculator • стр. ${i} из ${pageCount}`),
-      W / 2,
-      doc.internal.pageSize.getHeight() - 8,
-      { align: "center" },
-    );
-  }
-
-  const stamp = new Date().toISOString().slice(0, 10);
-  doc.save(`cargo-report-${stamp}.pdf`);
 }
