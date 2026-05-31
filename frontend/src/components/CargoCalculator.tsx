@@ -128,10 +128,9 @@ export function CargoCalculator() {
         }
     };
 
-    // Хелпер: предложение реально доступно (есть цена и статус ok)
+// Хелпер: предложение реально доступно (есть цена и статус ok)
     const isAvailable = (o: any) =>
         o && o.status === "available" && typeof o.price === "number" && o.price > 0;
-
     // Сортировка: сначала доступные по возрастанию цены, затем недоступные в конце
     const sortedResults = useMemo(() => {
         if (!backendResult || !Array.isArray(backendResult.offers)) return [];
@@ -152,7 +151,6 @@ export function CargoCalculator() {
         () => sortedResults.filter(isAvailable).length,
         [sortedResults],
     );
-
     // Корректное склонение для "предложений"
     const offersWord = (n: number) => {
         const mod10 = n % 10;
@@ -165,7 +163,7 @@ export function CargoCalculator() {
 
     // Лучшая цена — первая в отсортированном списке доступных
     const bestPrice = useMemo(() => {
-        const first = sortedResults.find(isAvailable);
+                const first = sortedResults.find(isAvailable);
         return first ? first.price : null;
     }, [sortedResults]);
 
@@ -383,9 +381,7 @@ export function CargoCalculator() {
 
                         <div className="flex items-end justify-between flex-wrap gap-3">
                             <div>
-                                <h2 className="text-2xl font-semibold">
-                                    Найдено {availableCount} {offersWord(availableCount)}
-                                </h2>
+                                <h2 className="text-2xl font-semibold">Найдено {availableCount} {offersWord(availableCount)}</h2>
                             </div>
                             <div className="flex items-center gap-3">
                                 {bestPrice !== null && (
