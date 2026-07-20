@@ -1,5 +1,5 @@
 const STORAGE_KEY = "cargo_auth";
-const API_BASE = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config";
 
 export interface AuthUser {
   username: string;
@@ -55,4 +55,4 @@ export function authHeader(): Record<string, string> {
   return u ? { Authorization: `Bearer ${u.token}` } : {};
 }
 
-export { API_BASE };
+export { API_BASE_URL as API_BASE };

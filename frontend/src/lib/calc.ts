@@ -1,4 +1,5 @@
 export type Carrier = "dl" | "rttk" | "brl";
+import { API_BASE_URL } from "@/config";
 
 export interface CalcInput {
   from: string;
@@ -56,7 +57,7 @@ export async function calculateOnBackend(input: CalcInput): Promise<{
   try {
     // Делаем запрос к вашему FastAPI серверу
     // Замените URL на ваш рабочий адрес бэкенда, если он отличается
-    const response = await fetch("http://localhost:8000/api/calculate", {
+    const response = await fetch(`${API_BASE_URL}/api/v1/calculate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -96,5 +97,19 @@ export async function calculateOnBackend(input: CalcInput): Promise<{
       totalWeight,
       oversized,
     };
+  }
+}
+
+export async function getCitiesFromBackend(): Promise<string[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/cities`);
+    if (!response.ok) throw new Error("Не удалось получить список городов");
+    const data = await response.json();
+    return Array.isArray(data.cities) && data.cities.length > 0
+      ? data.cities
+      : getAllCities(); // fallback, если бэкенд вернул пусто
+  } catch (error) {
+    console.error("Ошибка загрузки городов с бэкенда:", error);
+    return getAllCities(); // fallback при сетевой ошибке
   }
 }
