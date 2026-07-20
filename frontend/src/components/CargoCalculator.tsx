@@ -11,11 +11,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { calculate, getAllCities, type CarrierResult } from "@/lib/calc";
+import { calculate, getAllCities, getCitiesFromBackend, type CarrierResult } from "@/lib/calc";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { logout } from "@/lib/auth";
 import { generateReport } from "@/lib/pdf";
+import { API_BASE_URL } from "@/config";
 
 const fmt = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
@@ -43,7 +44,10 @@ export function CargoCalculator() {
     const [result, setResult] = useState<ReturnType<typeof calculate> | null>(null);
 
     // 4. Стейты формы и городов
-    const cities = useMemo(() => getAllCities(), []);
+    const [cities, setCities] = useState<string[]>(getAllCities()); // показываем статичный список сразу, пока грузится реальный
+    useEffect(() => {
+        getCitiesFromBackend().then(setCities);
+    }, []);
     const [from, setFrom] = useState("Чита");
     const [to, setTo] = useState("Москва");
 
@@ -97,7 +101,7 @@ export function CargoCalculator() {
         };
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/api/v1/calculate", {
+            const response = await fetch(`${API_BASE_URL}/api/v1/calculate`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -130,7 +134,7 @@ export function CargoCalculator() {
 
 // Хелпер: предложение реально доступно (есть цена и статус ok)
     const isAvailable = (o: any) =>
-        o && o.status === "available" && typeof o.price === "number" && o.price > 0;
+    o && typeof o.price === "number" && o.price > 0;
     // Сортировка: сначала доступные по возрастанию цены, затем недоступные в конце
     const sortedResults = useMemo(() => {
         if (!backendResult || !Array.isArray(backendResult.offers)) return [];
@@ -176,7 +180,7 @@ export function CargoCalculator() {
 
         // Фильтруем только те компании, у которых статус "доступен" и цена корректная
         const validOffers = backendResult.offers.filter(
-            (o: any) => o.status === "available" && o.price && o.price > 0
+            (o: any) => o.price && o.price > 0
         );
 
         if (validOffers.length === 0) {
