@@ -260,6 +260,10 @@ async def process_calculation(request: CargoRequest):
         recommendation=recommendation
     )
 
+@app.get("/api/v1/cities")
+async def get_cities():
+    local = LocalCalculatorService()
+    return {"cities": local.get_available_cities()}
 
 if __name__ == "__main__":
     # Запуск Uvicorn-сервера
