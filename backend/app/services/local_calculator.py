@@ -257,3 +257,28 @@ class LocalCalculatorService:
                 "oversized": False,
                 "description": f"Компания БРЛ таким путем выбранный транспорт ({capacity}т) не возит."
             }
+
+    def get_available_cities(self) -> list[str]:
+        """Извлекает названия городов из строк-заголовков маршрутов в прайс-файлах РТТК и БРЛ"""
+        cities = set()
+
+        for path in [self.rttk_path, self.brl_path]:
+            df = self._load_dataframe(path)
+            if df.empty:
+                continue
+            for _, row in df.iterrows():
+                cell_value = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
+                if not cell_value:
+                    continue
+                lower_value = cell_value.lower()
+                if "грузоподъемностью" in lower_value:
+                    continue
+                for sep in ["–", "—", "-", "/"]:
+                    if sep in cell_value:
+                        parts = [p.strip() for p in cell_value.split(sep) if p.strip()]
+                        for p in parts:
+                            if 2 <= len(p) <= 40:  # защита от мусора в ячейках
+                                cities.add(p)
+                        break
+
+        return sorted(cities, key=lambda s: s.lower())
