@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Truck, Package, MapPin, Calculator, AlertTriangle, Plane, Award, Clock, Wallet, CheckCircle2, FileDown, LogOut, ShieldAlert, LogIn, User } from "lucide-react";
+import { Truck, Package, MapPin, Calculator, AlertTriangle, Award, Clock, Wallet, CheckCircle2, FileDown, LogOut, ShieldAlert, LogIn, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { calculate, getAllCities, getCitiesFromBackend, type CarrierResult } from "@/lib/calc";
+import { calculate, getCitiesFromBackend, type CarrierResult } from "@/lib/calc";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { logout } from "@/lib/auth";
@@ -20,10 +20,9 @@ import { API_BASE_URL } from "@/config";
 
 const fmt = (n: number) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 
-// Validation limits
 const LIMITS = {
     weight: { min: 1, max: 20000, label: "кг" },
-    dim: { min: 1, max: 240, label: "см" }, // standard truck max ~240cm
+    dim: { min: 1, max: 240, label: "см" },
     qty: { min: 1, max: 999, label: "шт" },
 };
 
@@ -33,25 +32,40 @@ export function CargoCalculator() {
     const user = useAuth();
     const navigate = useNavigate();
 
-    // 1. Оставляем один стейт для типа перевозки
-    const [type, setType] = useState<"auto" | "express">("auto");
+    // Тип перевозки — теперь только "авто"
+    const type = "auto" as const;
 
-    // 2. Стейты для работы с FastAPI-бэкендом
     const [backendResult, setBackendResult] = useState<any | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
 
-    // 3. Старый результат (если он пока нужен для совместимости, оставляем только этот один)
-    const [result, setResult] = useState<ReturnType<typeof calculate> | null>(null);
+    // --- Города: без статики, с явным состоянием загрузки/ошибки ---
+    const [cities, setCities] = useState<string[]>([]);
+    const [citiesLoading, setCitiesLoading] = useState(true);
+    const [citiesError, setCitiesError] = useState<string | null>(null);
 
-    // 4. Стейты формы и городов
-    const [cities, setCities] = useState<string[]>(getAllCities()); // показываем статичный список сразу, пока грузится реальный
     useEffect(() => {
-        getCitiesFromBackend().then(setCities);
+        let mounted = true;
+
+        getCitiesFromBackend()
+            .then((list) => {
+                if (mounted) setCities(list);
+            })
+            .catch((err) => {
+                console.error("Ошибка загрузки городов:", err);
+                if (mounted) setCitiesError(err instanceof Error ? err.message : String(err));
+            })
+            .finally(() => {
+                if (mounted) setCitiesLoading(false);
+            });
+
+        return () => {
+            mounted = false;
+        };
     }, []);
+
     const [from, setFrom] = useState("Чита");
     const [to, setTo] = useState("Москва");
 
-    // Параметры груза
     const [weight, setWeight] = useState("500");
     const [length, setLength] = useState("120");
     const [width, setWidth] = useState("80");
@@ -86,9 +100,8 @@ export function CargoCalculator() {
         if (!isValid) return;
 
         setIsLoading(true);
-        setBackendResult(null); // Очищаем прошлый результат перед новым запросом
+        setBackendResult(null);
 
-        // Формируем JSON-пакет по схеме Pydantic, которую ждет наш FastAPI
         const requestData = {
             from_location: from,
             to_location: to,
@@ -106,6 +119,7 @@ export function CargoCalculator() {
                 headers: {
                     "Content-Type": "application/json",
                     "Accept": "application/json",
+                    "ngrok-skip-browser-warning": "true",
                 },
                 body: JSON.stringify(requestData),
             });
@@ -115,11 +129,8 @@ export function CargoCalculator() {
             }
 
             const data = await response.json();
-
-            // Сохраняем ответ бэкенда в наше новое состояние
             setBackendResult(data);
 
-            // Плавно скроллим к результатам
             setTimeout(() => {
                 document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" });
             }, 50);
@@ -132,10 +143,9 @@ export function CargoCalculator() {
         }
     };
 
-// Хелпер: предложение реально доступно (есть цена и статус ok)
     const isAvailable = (o: any) =>
-    o && typeof o.price === "number" && o.price > 0;
-    // Сортировка: сначала доступные по возрастанию цены, затем недоступные в конце
+        o && typeof o.price === "number" && o.price > 0;
+
     const sortedResults = useMemo(() => {
         if (!backendResult || !Array.isArray(backendResult.offers)) return [];
         const offers = [...backendResult.offers];
@@ -145,17 +155,15 @@ export function CargoCalculator() {
             if (aOk && !bOk) return -1;
             if (!aOk && bOk) return 1;
             if (aOk && bOk) return a.price - b.price;
-            // оба недоступны — стабильно по названию
             return String(a.company || "").localeCompare(String(b.company || ""), "ru");
         });
     }, [backendResult]);
 
-    // Считаем только реально доступные предложения с ценой
     const availableCount = useMemo(
         () => sortedResults.filter(isAvailable).length,
         [sortedResults],
     );
-    // Корректное склонение для "предложений"
+
     const offersWord = (n: number) => {
         const mod10 = n % 10;
         const mod100 = n % 100;
@@ -165,20 +173,16 @@ export function CargoCalculator() {
         return "предложений";
     };
 
-    // Лучшая цена — первая в отсортированном списке доступных
     const bestPrice = useMemo(() => {
-                const first = sortedResults.find(isAvailable);
+        const first = sortedResults.find(isAvailable);
         return first ? first.price : null;
     }, [sortedResults]);
 
-    // Проверка на негабарит (смотрим, есть ли флаг oversized хотя бы у одной компании)
     const isOversized = sortedResults.some((o: any) => o.oversized);
 
-    // Вычисляем чистую и красивую рекомендацию на фронтенде
     const clientRecommendation = useMemo(() => {
         if (!backendResult || !backendResult.offers) return null;
 
-        // Фильтруем только те компании, у которых статус "доступен" и цена корректная
         const validOffers = backendResult.offers.filter(
             (o: any) => o.price && o.price > 0
         );
@@ -187,14 +191,12 @@ export function CargoCalculator() {
             return "К сожалению, ни одна из логистических компаний не обслуживает данный маршрут для выбранных параметров груза.";
         }
 
-        // Находим самое бюджетное предложение среди валидных
         const cheapest = validOffers.reduce((prev: any, current: any) => (prev.price < current.price ? prev : current));
 
         if (validOffers.length === 1) {
             return `Для данного направления доступен один вариант: ТК "${cheapest.company}" с тарифом ${fmt(cheapest.price)}.`;
         }
 
-        // Если доступно несколько вариантов
         const alternative = validOffers.find((o: any) => o.company !== cheapest.company);
         const alternativeText = alternative ? ` Для сравнения, альтернативный доступный рейс предоставляет ТК "${alternative.company}" (${fmt(alternative.price)}).` : "";
 
@@ -206,7 +208,6 @@ export function CargoCalculator() {
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Header */}
             <header className="border-b border-border/40 bg-card/80 backdrop-blur-md sticky top-0 z-10">
                 <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -252,7 +253,6 @@ export function CargoCalculator() {
                 </div>
             </header>
 
-            {/* Hero */}
             <section className="px-6 pt-12 pb-20 sm:pt-16 sm:pb-24">
                 <div className="mx-auto max-w-2xl text-center">
                     <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
@@ -264,7 +264,6 @@ export function CargoCalculator() {
                 </div>
             </section>
 
-            {/* Calculator */}
             <main className="mx-auto max-w-5xl px-6 -mt-12 pb-20">
                 <div
                     className="rounded-3xl bg-card border border-border p-6 sm:p-8"
@@ -274,9 +273,20 @@ export function CargoCalculator() {
                         {/* Направление */}
                         <div className="space-y-4">
                             <SectionTitle icon={<MapPin className="h-4 w-4" />} title="Направление" />
+
+                            {/* --- Состояние загрузки/ошибки городов --- */}
+                            {citiesLoading && (
+                                <p className="text-sm text-muted-foreground">Загрузка списка городов...</p>
+                            )}
+                            {citiesError && (
+                                <p className="text-sm text-destructive">
+                                    Не удалось загрузить города: {citiesError}
+                                </p>
+                            )}
+
                             <div>
                                 <Label className="text-xs font-medium text-muted-foreground">Откуда</Label>
-                                <Select value={from} onValueChange={setFrom}>
+                                <Select value={from} onValueChange={setFrom} disabled={citiesLoading || !!citiesError}>
                                     <SelectTrigger className="h-11 mt-1.5"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         {cities.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -285,7 +295,7 @@ export function CargoCalculator() {
                             </div>
                             <div>
                                 <Label className="text-xs font-medium text-muted-foreground">Куда</Label>
-                                <Select value={to} onValueChange={setTo}>
+                                <Select value={to} onValueChange={setTo} disabled={citiesLoading || !!citiesError}>
                                     <SelectTrigger className="h-11 mt-1.5"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         {cities.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -295,28 +305,29 @@ export function CargoCalculator() {
                                     <p className="text-xs text-destructive mt-1.5">{routeError}</p>
                                 )}
                             </div>
-
                             <div className="pt-2">
                                 <SectionTitle icon={<Truck className="h-4 w-4" />} title="Тип перевозки" />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <TypeCard
-                                    active={type === "auto"}
-                                    onClick={() => setType("auto")}
-                                    icon={<Truck className="h-5 w-5" />}
-                                    title="Авто"
-                                    sub="Стандартно"
-                                />
-                                <TypeCard
-                                    active={type === "express"}
-                                    onClick={() => setType("express")}
-                                    icon={<Plane className="h-5 w-5" />}
-                                    title="Экспресс"
-                                    sub="Быстрее, дороже"
-                                />
+                            {/* Карточка на всю ширину колонки */}
+                            <div className="w-full">
+                                <div
+                                    className="rounded-xl border-2 border-primary bg-primary/5 p-4 cursor-default transition-all w-full"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
+                                            <Truck className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-primary">Авто</div>
+                                            <div className="text-xs text-muted-foreground">Стандартно</div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 text-xs text-primary">
+                                        ✓ Выбранный тип
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
                         {/* Груз */}
                         <div className="space-y-4">
                             <SectionTitle icon={<Package className="h-4 w-4" />} title="Параметры груза" />
@@ -368,7 +379,6 @@ export function CargoCalculator() {
                     </Button>
                 </div>
 
-                {/* Results */}
                 {backendResult && (
                     <div id="results" className="mt-12 space-y-6 scroll-mt-24">
                         {isOversized && (
@@ -525,28 +535,5 @@ function Field({
             </div>
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
         </div>
-    );
-}
-
-function TypeCard({
-    active, onClick, icon, title, sub,
-}: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; sub: string }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={cn(
-                "rounded-xl border px-4 py-3 text-left transition-all",
-                active
-                    ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                    : "border-border hover:border-primary/40 hover:bg-muted/40",
-            )}
-        >
-            <div className={cn("flex items-center gap-2 font-medium", active && "text-primary")}>
-                {icon}
-                {title}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>
-        </button>
     );
 }

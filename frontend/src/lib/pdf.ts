@@ -107,7 +107,7 @@ export function generateReport(data: ReportData) {
     drawInfoTable("Маршрут перевозки", [
       ["Откуда", data.from || "—"],
       ["Куда", data.to || "—"],
-      ["Тип перевозки", data.type === "express" ? "Экспресс" : "Авто"]
+      ["Тип перевозки", data.type]
     ]);
 
     // 4. Таблица Параметров груза
