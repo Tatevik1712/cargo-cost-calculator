@@ -2,6 +2,7 @@
 Универсальный модуль парсинга локальных прайсов (CSV / Excel)"""
 import pandas as pd
 import os
+import re
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_FILE_PATH = os.path.join(BACKEND_DIR, ".env")
 
@@ -258,27 +259,77 @@ class LocalCalculatorService:
                 "description": f"Компания БРЛ таким путем выбранный транспорт ({capacity}т) не возит."
             }
 
+    def _split_route(self, header: str) -> list[str]:
+        """Делит строку-заголовок маршрута на 2 сырых куска (откуда/куда)"""
+        main_part = header.split("/")[0]  # отбрасываем обратное направление после "/"
+        if "–" in main_part:
+            raw_parts = main_part.split("–", 1)
+        elif "—" in main_part:
+            raw_parts = main_part.split("—", 1)
+        else:
+            raw_parts = re.split(r"\s-\s", main_part, maxsplit=1)
+        return [p.strip() for p in raw_parts if p.strip()]
+
+    def _extract_city_candidates(self, raw: str) -> list[str]:
+        """Извлекает название(я) города из одного куска маршрута, убирая 'область,', 'г.', 'с ' и т.п."""
+        raw = raw.replace("\xa0", " ").strip()
+        parts = [p.strip() for p in raw.split(",")]
+
+        marker_idx = None
+        for i, p in enumerate(parts):
+            low = p.lower()
+            if low.startswith("г.") or low.startswith("г ") or low == "г":
+                marker_idx = i
+                break
+
+        if marker_idx is not None:
+            city = re.sub(r"^г\.?\s*", "", parts[marker_idx], flags=re.IGNORECASE).strip()
+            return [city] if city else []
+
+        out = []
+        for p in parts:
+            p2 = re.sub(r"^с\s+", "", p, flags=re.IGNORECASE).strip()
+            if p2:
+                out.append(p2)
+        return out
+
+    def _normalize_city_name(self, name: str) -> str:
+        """Приводит известные варианты написания к единому виду"""
+        low = name.lower()
+        if "питербург" in low or "петербург" in low:
+            return "Санкт-Петербург"
+        if "ростов" in low and "дон" in low:
+            return "Ростов-на-Дону"
+        return name
+
     def get_available_cities(self) -> list[str]:
-        """Извлекает названия городов из строк-заголовков маршрутов в прайс-файлах РТТК и БРЛ"""
+        """
+        Собирает список городов из строк-заголовков маршрутов в прайсах РТТК и БРЛ.
+        ВАЖНО: Деловые Линии довозят в любой город, поэтому отдельного списка для них
+        не нужно — используем объединение городов из обоих файлов для формы from/to.
+        """
         cities = set()
 
         for path in [self.rttk_path, self.brl_path]:
             df = self._load_dataframe(path)
             if df.empty:
                 continue
-            for _, row in df.iterrows():
-                cell_value = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
-                if not cell_value:
-                    continue
-                lower_value = cell_value.lower()
-                if "грузоподъемностью" in lower_value:
-                    continue
-                for sep in ["–", "—", "-", "/"]:
-                    if sep in cell_value:
-                        parts = [p.strip() for p in cell_value.split(sep) if p.strip()]
-                        for p in parts:
-                            if 2 <= len(p) <= 40:  # защита от мусора в ячейках
-                                cities.add(p)
-                        break
 
-        return sorted(cities, key=lambda s: s.lower())
+            for _, row in df.iterrows():
+                cell_value = row.iloc[0] if len(row) > 0 else None
+                if pd.isna(cell_value):
+                    continue
+                s = str(cell_value).strip()
+
+                if "Грузоподъемностью" in s:
+                    continue
+                # Пропускаем строки без явного разделителя маршрута (например, "Прайс РТТК")
+                if not any(sep in s for sep in ["–", "—", "/"]) and not re.search(r"\s-\s", s):
+                    continue
+
+                for half in self._split_route(s):
+                    for candidate in self._extract_city_candidates(half):
+                        if 2 <= len(candidate) <= 40:
+                            cities.add(self._normalize_city_name(candidate))
+
+        return sorted(cities, key=lambda x: x.lower())

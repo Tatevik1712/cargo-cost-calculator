@@ -266,5 +266,4 @@ async def get_cities():
     return {"cities": local.get_available_cities()}
 
 if __name__ == "__main__":
-    # Запуск Uvicorn-сервера
     uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
