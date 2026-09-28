@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     DELLIN_APP_KEY: str
     HOST: str
     PORT: int
+    SECRET_KEY: str
 
     # Указываем Pydantic точный абсолютный путь к файлу .env
     model_config = SettingsConfigDict(
